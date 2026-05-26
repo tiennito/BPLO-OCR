@@ -6,10 +6,11 @@ import { UploadValidationMessage } from './UploadValidationMessage'
 import { UploadProgress } from './UploadProgress'
 import { FilePreview } from './FilePreview'
 import { OCRProcessingButton } from './OCRProcessingButton'
+import { OCRResultViewer } from './OCRResultViewer'
 import { UploadStatusBadge } from './UploadStatusBadge'
 import { useFileUpload } from '../hooks/useFileUpload'
-import { useOCRProcessing } from '../hooks/useOCRProcessing'
 import { useFileValidation } from '../hooks/useFileValidation'
+import { useOCR } from '@/src/hooks/useOCR'
 
 interface Props {
   documentType: string
@@ -31,7 +32,7 @@ export const FileUpload: React.FC<Props> = ({ documentType, uploadedBy, applicat
     onError: (e) => validate({ name: '', size: 0, type: '' } as unknown as File) || clearError(),
   })
 
-  const { ocrStatus, ocrResult, ocrError, process: runOCR, retry: retryOCR } = useOCRProcessing(uploadedBy)
+  const { status: ocrStatus, progress: ocrProgress, result: ocrResult, error: ocrError, process: processTesseract } = useOCR()
 
   // ── Drag & Drop ────────────────────────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }, [])
@@ -70,17 +71,13 @@ export const FileUpload: React.FC<Props> = ({ documentType, uploadedBy, applicat
     [validate, replace]
   )
 
-  const handleOCR = useCallback(() => {
-    if (!file?.dbRecord) return
-    const { id, file_path, mime_type } = file.dbRecord
-    if (ocrStatus === 'failed' || ocrStatus === 'completed') {
-      retryOCR(id, file_path, mime_type)
-    } else {
-      runOCR(id, file_path, mime_type)
-    }
-  }, [file, ocrStatus, runOCR, retryOCR])
+  const handleOCR = useCallback(async () => {
+    if (!file?.file) return
+    await processTesseract(file.file, { language: 'eng' })
+  }, [file, processTesseract])
 
   const isUploaded = uploadState === 'uploaded'
+  const ocrButtonStatus = ocrStatus === 'idle' ? 'ready' : ocrStatus === 'processing' ? 'processing' : ocrStatus === 'preparing' ? 'processing' : ocrStatus === 'completed' ? 'completed' : 'failed'
 
   return (
     <div className="w-full max-w-2xl mx-auto space-y-5">
@@ -180,41 +177,25 @@ export const FileUpload: React.FC<Props> = ({ documentType, uploadedBy, applicat
                 <p className="text-sm font-semibold text-gray-800">OCR Processing</p>
                 <p className="text-xs text-gray-500">Extract text and data from your document</p>
               </div>
-              <OCRProcessingButton status={ocrStatus} onClick={handleOCR} />
+              <OCRProcessingButton status={ocrButtonStatus} onClick={handleOCR} disabled={ocrStatus === 'processing' || ocrStatus === 'preparing'} />
             </div>
 
-            {ocrError && <UploadValidationMessage message={ocrError} variant="error" />}
+            {(ocrStatus === 'processing' || ocrStatus === 'preparing') && (
+              <div className="mt-2">
+                <UploadProgress progress={ocrProgress} label="Extracting text..." />
+              </div>
+            )}
 
-            {ocrResult && ocrStatus === 'completed' && (
+            {ocrError && (
+              <div className="mt-2">
+                <UploadValidationMessage message={ocrError.message} variant="error" />
+              </div>
+            )}
+
+            {ocrStatus === 'completed' && ocrResult && (
               <div className="mt-2 space-y-3">
                 <UploadValidationMessage message="OCR processing completed successfully." variant="success" />
-
-                <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-2 text-xs">
-                  <div className="flex justify-between text-gray-500">
-                    <span>Confidence Score</span>
-                    <span className="font-semibold text-gray-800">
-                      {ocrResult.confidence_score !== null
-                        ? `${(ocrResult.confidence_score * 100).toFixed(1)}%`
-                        : 'N/A'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-gray-500">
-                    <span>Processed At</span>
-                    <span className="font-semibold text-gray-800">
-                      {ocrResult.processed_at
-                        ? new Date(ocrResult.processed_at).toLocaleString()
-                        : '—'}
-                    </span>
-                  </div>
-                  {ocrResult.extracted_text && (
-                    <div className="mt-2">
-                      <p className="text-gray-500 mb-1">Extracted Text</p>
-                      <pre className="whitespace-pre-wrap text-gray-800 bg-gray-50 rounded p-2 max-h-40 overflow-y-auto text-xs leading-relaxed">
-                        {ocrResult.extracted_text}
-                      </pre>
-                    </div>
-                  )}
-                </div>
+                <OCRResultViewer result={ocrResult} />
               </div>
             )}
           </div>
