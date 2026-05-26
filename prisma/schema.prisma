@@ -17,4 +17,58 @@ model Applicant {
   phone       String?
   address     String?
   createdAt   DateTime @default(now())
+
+  uploadedDocuments UploadedDocument[]
+}
+
+// TABLE 1
+model UploadedDocument {
+  id              String    @id @default(cuid())
+  application_id  String?
+  document_type   String
+  file_name       String
+  file_path       String
+  file_size       Int
+  mime_type       String
+  ocr_status      String    @default("uploaded")
+  uploaded_by     String
+  uploaded_at     DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+  deleted_at      DateTime?
+
+  applicant       Applicant?         @relation(fields: [application_id], references: [id])
+  ocrLogs         OCRProcessingLog[]
+  auditLogs       UploadAuditLog[]
+
+  @@map("uploaded_documents")
+}
+
+// TABLE 2
+model OCRProcessingLog {
+  id                String    @id @default(cuid())
+  document_id       String
+  processing_status String    @default("ready")
+  extracted_text    String?
+  confidence_score  Float?
+  processed_at      DateTime  @default(now())
+  processed_by      String?
+  remarks           String?
+
+  document          UploadedDocument @relation(fields: [document_id], references: [id])
+
+  @@map("ocr_processing_logs")
+}
+
+// TABLE 3
+model UploadAuditLog {
+  id            String   @id @default(cuid())
+  document_id   String
+  action        String
+  performed_by  String
+  performed_at  DateTime @default(now())
+  details       Json?
+
+  document      UploadedDocument @relation(fields: [document_id], references: [id])
+
+  @@map("upload_audit_logs")
 }
